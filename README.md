@@ -20,13 +20,17 @@ A aplicação fornece endpoints para criação de usuários, autenticação (JWT
 
 ## Variáveis de ambiente
 
-Crie um arquivo `.env` na raiz do projeto com a variável abaixo:
+Crie um arquivo `.env` na raiz do projeto com as variáveis abaixo (ambas são necessárias para o projeto rodar):
 
 - `DATABASE_URL` — string de conexão do PostgreSQL. Exemplo:
 
   DATABASE_URL=postgres://usuario:senha@localhost:5432/nome_do_banco
 
-Opcionalmente, para produção, recomenda-se extrair a chave JWT para uma variável (o código atual usa a chave embutida `chaveSecreta` para desenvolvimento).
+- `JWT_SECRET` — string secreta usada para assinar/verificar tokens JWT (obrigatório). Exemplo:
+
+  JWT_SECRET=minha_super_chave_secreta
+
+Sugestão: adicione um arquivo `.env.example` (versão pública sem valores reais) contendo as chaves acima como referência para quem clonar o repositório.
 
 ## Instalação
 
@@ -48,6 +52,8 @@ Para rodar em modo de desenvolvimento (usa `nodemon` e `ts-node`):
 npm run start
 ```
 
+Observação: a variável `JWT_SECRET` precisa estar definida (no `.env` ou no ambiente) antes de iniciar o servidor; caso contrário o aplicativo lançará erro na inicialização.
+
 O servidor por padrão escuta a porta `3000`.
 
 ## Endpoints principais
@@ -68,13 +74,21 @@ O servidor por padrão escuta a porta `3000`.
 
 - GET /tarefas/:id — (protegido) obtém uma tarefa por id
 
-> Observação sobre autenticação: o projeto atualmente gera/verifica tokens JWT com a chave fixa `chaveSecreta` no código. Para produção, mova a chave para uma variável de ambiente (por exemplo `JWT_SECRET`) e atualize `authRoutes.ts` e `authMiddleware.ts` para ler essa variável.
-
 ## Migrações / Esquema (Drizzle)
 
 O projeto inclui `drizzle.config.ts` e uma definição de esquema em `src/db/schema.ts`.
 
-Se quiser usar o `drizzle-kit` (está em devDependencies) você pode usar o CLI via `npx` para gerar/aplicar migrations. Exemplos (dependendo da versão do `drizzle-kit` as flags podem variar):
+
+O projeto inclui `drizzle-kit` nas devDependencies e já tem scripts no `package.json` para facilitar o trabalho com migrations. Duas opções:
+
+1) Usando os scripts do projeto (recomendado):
+
+```powershell
+npm run drizzle:generate    # gera arquivos a partir do schema em ./drizzle
+npm run drizzle:push        # aplica/push das migrations para o banco (verifique a config)
+```
+
+2) Usando o CLI diretamente via npx (equivalente):
 
 ```powershell
 npx drizzle-kit generate --schema ./src/db/schema.ts --out ./drizzle
