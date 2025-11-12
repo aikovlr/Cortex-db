@@ -19,15 +19,39 @@ export const tipoUsuarioTable = pgTable('tipo_usuario', {
 });
 
 export const tarefaTable = pgTable('tarefa', {
-    id: integer('id').primaryKey().generatedAlwaysAsIdentity(),
+    id_tarefa: integer('id_tarefa').primaryKey().generatedAlwaysAsIdentity(),
     titulo: varchar('titulo', {length: 255}).notNull(),
-    descricao: varchar('descricao', {length: 1000}).notNull(),
+    descricao: varchar('descricao', {length: 1000}),
     dt_vencimento: varchar('dt_vencimento', {length: 50}).notNull(),
-    pontuacao: integer('pontuacao').notNull(),
-    usuario_id: integer('usuario_id')
+    pontuacao: integer('pontuacao'),
+    id_prioridade_fk: integer('id_prioridade_fk')
+        .references(() => tipo_prioridadeTable.id_prioridade, { onDelete: 'restrict' }),
+    id_status_fk: integer('id_status_fk')
+        .notNull()
+        .references(() => status_tarefaTable.id_status, { onDelete: 'restrict' }),
+    id_categoria_fk: integer('id_categoria_fk')
+        .notNull()
+        .references(() => categoriaTable.id_categoria, { onDelete: 'restrict' }),
+    id_criador_fk: integer('id_criador_fk')
         .notNull()
         .references(() => usuarioTable.id_usuario, { onDelete: 'restrict' }),
+    id_responsavel_fk: integer('id_responsavel_fk')
+        .references(() => usuarioTable.id_usuario, { onDelete: 'restrict' }),
+    dt_criacao: timestamp('dt_criacao').notNull().defaultNow(),
 });
 
+export const tipo_prioridadeTable = pgTable('prioridade', {
+    id_prioridade: integer('id_prioridade').primaryKey().generatedAlwaysAsIdentity(),
+    nome: varchar('nome', {length: 20}).notNull()
+});
 
+export const status_tarefaTable = pgTable('status_tarefa', {
+    id_status: integer('id_status').primaryKey().generatedAlwaysAsIdentity(),
+    nome: varchar('nome', {length: 20}).notNull()
+});
 
+export const categoriaTable = pgTable('categoria', {
+    id_categoria: integer('id_categoria').primaryKey().generatedAlwaysAsIdentity(),
+    nome: varchar('nome', {length: 50}).notNull(),
+    descricao: varchar('descricao', {length: 255}).notNull()
+});
