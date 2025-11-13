@@ -1,11 +1,11 @@
 import express from "express";
 import { db } from "./db.ts";
-import { tarefaTable, usuarioTable } from "./db/schema.ts";
+import { status_tarefaTable, tarefaTable, tipo_prioridadeTable, usuarioTable, } from "./db/schema.ts";
 import { calculateMd5Hash } from "./hash.ts";
 import cors from "cors";
 import authRoutes from './authRoutes.ts';
 import { verificarToken } from './authMiddleware.ts';
-import { eq } from "drizzle-orm";
+import { and, eq, ilike } from "drizzle-orm";
 
 type AuthenticatedRequest = express.Request & { user?: string | object };
 
@@ -18,11 +18,6 @@ app.use(authRoutes);
 
 app.get("/usuarios", verificarToken, async (req, res) => {
   res.json({ mensagem: "Acesso autorizado a usuários." });
-});
-
-app.get("/tarefas", verificarToken, async (req, res) => {
-  const tarefas = await db.select().from(tarefaTable);
-  res.json(tarefas);
 });
 
 // criar usuario
@@ -66,7 +61,7 @@ app.post("/tarefa", verificarToken, async (req: AuthenticatedRequest, res) => {
     pontuacao,
     id_prioridade_fk: prioridade,
     id_status_fk: 1, // Pendente
-    id_criador_fk: req.user && typeof req.user === 'object' && 'id' in req.user ? req.user.id : id_criador_fk, 
+    id_criador_fk: req.user && typeof req.user === 'object' && 'id' in req.user ? req.user.id : id_criador_fk,
     id_responsavel_fk: responsavel[0]?.id_usuario,
     id_categoria_fk,
   }).returning();
@@ -81,7 +76,14 @@ app.get("/tarefas", verificarToken, async (req: AuthenticatedRequest, res) => {
     return res.status(401).json({ message: 'Usuário não autenticado.' });
   }
 
+  const search = req.query.search as string | undefined;
+
   const id_usuario = req.user.id as number;
+  let filtroTitulo = undefined;
+
+  if (search) {
+    filtroTitulo = ilike(tarefaTable.titulo, `%${search}%`);
+  }
 
   try {
     // Busca tarefas do usuário autenticado
@@ -92,15 +94,18 @@ app.get("/tarefas", verificarToken, async (req: AuthenticatedRequest, res) => {
         descricao: tarefaTable.descricao,
         dt_vencimento: tarefaTable.dt_vencimento,
         pontuacao: tarefaTable.pontuacao,
-        prioridade: tarefaTable.id_prioridade_fk,
         id_responsavel_fk: tarefaTable.id_responsavel_fk,
         nome_responsavel: usuarioTable.nome,
+        status: status_tarefaTable.nome,
+        prioridade: tipo_prioridadeTable.nome,
       })
       .from(tarefaTable)
+      .where(and(eq(tarefaTable.id_responsavel_fk, id_usuario), filtroTitulo))
       .leftJoin(usuarioTable, eq(tarefaTable.id_responsavel_fk, usuarioTable.id_usuario))
-      .where(eq(tarefaTable.id_responsavel_fk, id_usuario));
-
-    res.json(tarefas);
+      .leftJoin(status_tarefaTable, eq(tarefaTable.id_status_fk, status_tarefaTable.id_status))
+      .leftJoin(tipo_prioridadeTable, eq(tarefaTable.id_prioridade_fk, tipo_prioridadeTable.id_prioridade))
+    
+    res.status(200).json(tarefas);
 
   } catch (error) {
     console.error(error);

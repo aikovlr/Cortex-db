@@ -40,7 +40,7 @@ export const tarefaTable = pgTable('tarefa', {
     dt_criacao: timestamp('dt_criacao').notNull().defaultNow(),
 });
 
-export const tipo_prioridadeTable = pgTable('prioridade', {
+export const tipo_prioridadeTable = pgTable('tipo_prioridade', {
     id_prioridade: integer('id_prioridade').primaryKey().generatedAlwaysAsIdentity(),
     nome: varchar('nome', {length: 20}).notNull()
 });
