@@ -1,3 +1,4 @@
+import { desc } from "drizzle-orm";
 import { integer, pgTable, varchar, timestamp} from "drizzle-orm/pg-core";
 
 export const usuarioTable = pgTable('usuario', {
@@ -8,14 +9,36 @@ export const usuarioTable = pgTable('usuario', {
     email: varchar('email', {length: 255}).notNull().unique(),
     senha_hash: varchar('senha_hash', {length: 255}).notNull(),
     dt_criacao: timestamp('dt_criacao').notNull().defaultNow(),
-    id_tipo_usuario_fk: integer('id_tipo_usuario_fk')
-        .notNull()
-        .references(() => tipoUsuarioTable.id_tipo_usuario, { onDelete: 'restrict' }),
 });
 
-export const tipoUsuarioTable = pgTable('tipo_usuario', {
-    id_tipo_usuario: integer('id_tipo_usuario').primaryKey().generatedAlwaysAsIdentity(),
-    nome: varchar('nome', {length: 100}).notNull(),
+export const equipeTable = pgTable('equipe', {
+    id_equipe: integer('id_equipe').primaryKey().generatedAlwaysAsIdentity(),
+    nome: varchar('nome', {length: 255}).notNull(),
+    descricao: varchar('descricao', {length: 1000}),
+    id_criador_fk: integer('id_criador_fk')
+        .notNull()
+        .references(() => usuarioTable.id_usuario, { onDelete: 'restrict' }),
+    dt_criacao: timestamp('dt_criacao').notNull().defaultNow(),
+});
+
+export const membro_equipeTable = pgTable('membro_equipe', {
+    id_membro: integer('id_membro').primaryKey().generatedAlwaysAsIdentity(),
+    id_usuario_fk: integer('id_usuario_fk')
+        .notNull()
+        .references(() => usuarioTable.id_usuario, { onDelete: 'restrict' }),
+    id_equipe_fk: integer('id_equipe_fk')
+        .notNull()
+        .references(() => equipeTable.id_equipe, { onDelete: 'restrict' }),
+    id_role_fk: integer('id_role_fk')
+        .notNull()
+        .references(() => roleTable.id_role, { onDelete: 'restrict' }),
+    dt_entrada: timestamp('dt_entrada').defaultNow().notNull(),
+});
+
+export const roleTable = pgTable('role', {
+    id_role: integer('id_role').primaryKey().generatedAlwaysAsIdentity(),
+    nome: varchar('nome', {length: 50}).notNull(),
+    descricao: varchar('descricao', {length: 255}),
 });
 
 export const tarefaTable = pgTable('tarefa', {
@@ -26,6 +49,9 @@ export const tarefaTable = pgTable('tarefa', {
     pontuacao: integer('pontuacao'),
     id_prioridade_fk: integer('id_prioridade_fk')
         .references(() => tipo_prioridadeTable.id_prioridade, { onDelete: 'restrict' }),
+    id_equipe_fk: integer('id_equipe_fk')
+        .references(() => equipeTable.id_equipe, { onDelete: 'restrict' }),
+    deletado_em: timestamp('deletado_em'),
     id_status_fk: integer('id_status_fk')
         .notNull()
         .references(() => status_tarefaTable.id_status, { onDelete: 'restrict' }),
@@ -35,8 +61,30 @@ export const tarefaTable = pgTable('tarefa', {
     id_criador_fk: integer('id_criador_fk')
         .notNull()
         .references(() => usuarioTable.id_usuario, { onDelete: 'restrict' }),
-    id_responsavel_fk: integer('id_responsavel_fk')
+    dt_criacao: timestamp('dt_criacao').notNull().defaultNow(),
+});
+
+export const responsavel_tarefaTable = pgTable('responsavel_tarefa', {
+    id: integer('id').primaryKey().generatedAlwaysAsIdentity(),
+    id_usuario_fk: integer('id_usuario_fk')
+        .notNull()
         .references(() => usuarioTable.id_usuario, { onDelete: 'restrict' }),
+    id_tarefa_fk: integer('id_tarefa_fk')
+        .notNull()
+        .references(() => tarefaTable.id_tarefa, { onDelete: 'restrict' }),
+});
+
+export const ticket_tarefaTable = pgTable('ticket_tarefa', {
+    id_ticket_tarefa: integer('id_ticket_tarefa').primaryKey().generatedAlwaysAsIdentity(),
+    id_tarefa_fk: integer('id_tarefa_fk')
+        .notNull()
+        .references(() => tarefaTable.id_tarefa, { onDelete: 'restrict' }),
+    id_usuario_fk: integer('id_usuario_fk')
+        .notNull()
+        .references(() => usuarioTable.id_usuario, { onDelete: 'restrict' }),
+    tipo_ticket: varchar('tipo_ticket', {length: 20}).notNull(),
+    motivo: varchar('motivo', {length: 100}).notNull(),
+    descricao: varchar('descricao', {length: 1000}),
     dt_criacao: timestamp('dt_criacao').notNull().defaultNow(),
 });
 
@@ -53,5 +101,35 @@ export const status_tarefaTable = pgTable('status_tarefa', {
 export const categoriaTable = pgTable('categoria', {
     id_categoria: integer('id_categoria').primaryKey().generatedAlwaysAsIdentity(),
     nome: varchar('nome', {length: 50}).notNull(),
-    descricao: varchar('descricao', {length: 255}).notNull()
+    descricao: varchar('descricao', {length: 255}).notNull(),
+    id_usuario_fk: integer('id_usuario_fk')
+        .notNull()
+        .references(() => usuarioTable.id_usuario, { onDelete: 'restrict' }),
 });
+
+export const anexoTable = pgTable('anexo', {
+    id_anexo: integer('id_anexo').primaryKey().generatedAlwaysAsIdentity(),
+    url_caminho: varchar('url_caminho', {length: 255}).notNull(),
+    nome_original: varchar('nome_original', {length: 255}).notNull(),
+    mime_type: varchar('mime_type', {length: 100}).notNull(),
+    id_tarefa_fk: integer('id_tarefa_fk')
+        .notNull()
+        .references(() => tarefaTable.id_tarefa, { onDelete: 'cascade' }),
+    id_usuario_fk: integer('id_usuario_fk')
+        .notNull()
+        .references(() => usuarioTable.id_usuario, { onDelete: 'restrict' }),
+    dt_envio: timestamp('dt_envio').notNull().defaultNow(),
+});
+
+export const notificacaoTable = pgTable('notificacao', {
+    id_notificacao: integer('id_notificacao').primaryKey().generatedAlwaysAsIdentity(),
+    id_usuario_fk: integer('id_usuario_fk')
+        .notNull()
+        .references(() => usuarioTable.id_usuario, { onDelete: 'restrict' }),
+    titulo: varchar('titulo', {length: 150}).notNull(),
+    mensagem: varchar('mensagem', {length: 255}).notNull(),
+    lida: integer('lida').notNull().default(0),
+    dt_envio: timestamp('dt_envio').notNull().defaultNow(),
+    tipo: varchar('tipo', {length: 30}).notNull(),
+});
+
