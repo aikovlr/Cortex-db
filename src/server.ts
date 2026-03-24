@@ -1,21 +1,38 @@
 import express from "express";
+import multer from "multer";
 import { db } from "./db.ts";
-import { status_tarefaTable, tarefaTable, tipo_prioridadeTable, usuarioTable, responsavel_tarefaTable, equipeTable, membro_equipeTable, roleTable } from "./db/schema.ts";
+import { status_tarefaTable, tarefaTable, tipo_prioridadeTable, usuarioTable, responsavel_tarefaTable, equipeTable, membro_equipeTable, roleTable, anexoTable } from "./db/schema.ts";
 import { calculateMd5Hash } from "./hash.ts";
 import cors from "cors";
 import authRoutes from './authRoutes.ts';
 import { verificarToken } from './authMiddleware.ts';
 import { and, eq, ilike, sql, asc, desc } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
-import e from "express";
+import fs from "fs";
+import path from "path";
 
 type AuthenticatedRequest = express.Request & { user?: string | object };
 
 const app = express();
 
+if (!fs.existsSync("uploads")) {
+  fs.mkdirSync("uploads");
+}
+
+const storage = multer.diskStorage({
+  destination: (req, file, cb) => {
+    cb(null, 'uploads/');
+  },
+  filename: (req, file, cb) => {
+    cb(null, `${Date.now()}-${file.originalname}`);
+  }
+});
+
+const upload = multer({ storage });
+
 app.use(cors());
 app.use(express.json());
-
+app.use("/uploads", express.static("uploads"));
 app.use(authRoutes);
 
 app.get("/usuarios", verificarToken, async (req, res) => {
@@ -204,13 +221,13 @@ app.post("/tarefa", verificarToken, async (req: AuthenticatedRequest, res) => {
   try {
     const {
       titulo, descricao, dt_vencimento, pontuacao, prioridade, id_categoria_fk, id_criador_fk, email_responsavel, id_equipe_fk, tipo_atribuicao } = req.body;
+
     if (!tipo_atribuicao) {
       return res.status(400).json({ message: "tipo_atribuicao obrigatório" });
     }
 
-    await db.transaction(async (tx) => {
-      
-      // cria tarefa
+    const novaTarefa = await db.transaction(async (tx) => {
+
       const result = await tx.insert(tarefaTable).values({
         titulo,
         descricao,
@@ -222,89 +239,84 @@ app.post("/tarefa", verificarToken, async (req: AuthenticatedRequest, res) => {
         id_categoria_fk,
         id_equipe_fk: tipo_atribuicao === "equipe" ? id_equipe_fk : null,
       }).returning();
-      
+
       const idTarefa = result[0]!.id_tarefa;
-      
+
       let inserts: any[] = [];
-      
-      // ATRIBUIR INDIVIDUAL
+
       if (tipo_atribuicao === "individual") {
         if (!email_responsavel) {
           throw new Error("Email obrigatório");
         }
-        
+
         const responsavel = await tx
-        .select()
-        .from(usuarioTable)
+          .select()
+          .from(usuarioTable)
           .where(eq(usuarioTable.email, email_responsavel))
           .limit(1);
-          
-          if (responsavel.length === 0) {
-            throw new Error("Usuário não encontrado");
-          }
-          
-          inserts = [{
-            id_usuario_fk: responsavel[0]!.id_usuario,
-            id_tarefa_fk: idTarefa
-          }];
+
+        if (responsavel.length === 0) {
+          throw new Error("Usuário não encontrado");
         }
-        
-        // ATRIBUIR PARA EQUIPE
-        if (tipo_atribuicao === "equipe") {
-          if (!id_equipe_fk) {
-            throw new Error("Equipe obrigatória");
-          }
-          
-          const membros = await tx
+
+        inserts = [{
+          id_usuario_fk: responsavel[0]!.id_usuario,
+          id_tarefa_fk: idTarefa
+        }];
+      }
+
+      if (tipo_atribuicao === "equipe") {
+        if (!id_equipe_fk) {
+          throw new Error("Equipe obrigatória");
+        }
+
+        const membros = await tx
           .select()
           .from(membro_equipeTable)
           .where(eq(membro_equipeTable.id_equipe_fk, Number(id_equipe_fk)));
-          
-          if (membros.length === 0) {
+
+        if (membros.length === 0) {
           throw new Error("Equipe sem membros");
         }
-        
-        // remove duplicados
+
         const usuariosUnicos = [...new Set(membros.map(m => m.id_usuario_fk))];
-        
+
         inserts = usuariosUnicos.map(idUsuario => ({
           id_usuario_fk: idUsuario,
           id_tarefa_fk: idTarefa
         }));
       }
-      
-      // VALIDAÇÃO FINAL
+
       if (inserts.length === 0) {
         throw new Error("Nenhum responsável válido");
       }
-      
-      // INSERT com proteção contra duplicado
+
       await tx.insert(responsavel_tarefaTable)
-      .values(inserts)
-      .onConflictDoNothing();
-      
-      // GARANTE que todos foram inseridos
+        .values(inserts)
+        .onConflictDoNothing();
+
       const inserted = await tx
-      .select()
-      .from(responsavel_tarefaTable)
-      .where(eq(responsavel_tarefaTable.id_tarefa_fk, idTarefa));
-      
+        .select()
+        .from(responsavel_tarefaTable)
+        .where(eq(responsavel_tarefaTable.id_tarefa_fk, idTarefa));
+
       const idsEsperados = inserts.map(i => i.id_usuario_fk);
-      
       const idsInseridos = inserted.map(i => i.id_usuario_fk);
-      
+
       const todosInseridos = idsEsperados.every(id => idsInseridos.includes(id));
-      
+
       if (!todosInseridos) {
         throw new Error("Nem todos os usuários foram atribuídos");
       }
-      
-      res.status(201).json({ message: "Tarefa criada com sucesso" });
+
+      return result[0];
     });
-    
+
+    return res.status(201).json({ id: novaTarefa?.id_tarefa, novaTarefa });
+
   } catch (error: any) {
     console.error("ERRO:", error);
-    
+
     return res.status(400).json({
       message: error.message || "Erro ao criar tarefa"
     });
@@ -399,6 +411,80 @@ app.get("/tarefas/:id", verificarToken, async (req: AuthenticatedRequest, res) =
   }
 
   res.json(tarefa[0]);
+});
+
+// enviar anexo
+app.post("/tarefas/:id/anexo", verificarToken, upload.array("anexo"), async (req: AuthenticatedRequest, res) => {
+  try {
+    const { id } = req.params;
+    const files = req.files as Express.Multer.File[];
+
+    if (!files || files.length === 0) {
+      return res.status(400).json({ message: "Nenhum arquivo enviado." });
+    }
+
+    if (!req.user) {
+      return res.status(401).json({ error: "Não autenticado" });
+    }
+
+    const id_usuario = (req.user as { id: number }).id;
+
+    const anexos = files.map(file => ({
+      url_caminho: `uploads/${file.filename}`,
+      nome_original: file.originalname,
+      mime_type: file.mimetype,
+      id_tarefa_fk: Number(id),
+      id_usuario_envio_fk: id_usuario,
+      dt_envio: new Date()
+    }));
+
+    await db.insert(anexoTable).values(anexos);
+
+    res.status(201).json(anexos);
+
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: "Erro ao enviar anexo." });
+  }
+}
+);
+
+app.get("/anexo/:id_tarefa", verificarToken, async (req, res) => {
+  const { id_tarefa } = req.params;
+
+  try {
+    const anexos = await db
+      .select()
+      .from(anexoTable)
+      .where(eq(anexoTable.id_tarefa_fk, Number(id_tarefa)));
+
+    res.json(anexos);
+
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: "Erro ao buscar anexos" });
+  }
+});
+
+app.get("/anexo/download/:nome", verificarToken, (req: AuthenticatedRequest, res) => {
+  try {
+    const nomeArquivo = req.params.nome;
+
+    if (!nomeArquivo) {
+      return res.status(400).json({ message: "Nome do arquivo não informado" });
+    }
+
+    const filePath = path.join(process.cwd(), "uploads", nomeArquivo);
+
+    if (!fs.existsSync(filePath)) {
+      return res.status(404).json({ message: "Arquivo não encontrado" });
+    }
+
+    return res.download(filePath);
+  } catch (error) {
+    console.error(error);
+    return res.status(500).json({ message: "Erro ao baixar arquivo" });
+  }
 });
 
 app.listen(3000, () => console.log("Servidor rodando na porta 3000"));

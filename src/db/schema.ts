@@ -115,7 +115,7 @@ export const anexoTable = pgTable('anexo', {
     id_tarefa_fk: integer('id_tarefa_fk')
         .notNull()
         .references(() => tarefaTable.id_tarefa, { onDelete: 'cascade' }),
-    id_usuario_fk: integer('id_usuario_fk')
+    id_usuario_envio_fk: integer('id_usuario_envio_fk')
         .notNull()
         .references(() => usuarioTable.id_usuario, { onDelete: 'restrict' }),
     dt_envio: timestamp('dt_envio').notNull().defaultNow(),
