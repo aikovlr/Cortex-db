@@ -11,6 +11,15 @@ if (!jwtSecret) {
     throw new Error('JWT_SECRET não definido nas variáveis de ambiente');
 }
 
+/** Mesmo payload do login — usado após cadastro para permitir POST /usuarios/anexo (foto de perfil). */
+export function signAccessToken(user: { id_usuario: number; email: string; nome: string }): string {
+    return jwt.sign(
+        { id: user.id_usuario, email: user.email, nome: user.nome },
+        jwtSecret as string,
+        { expiresIn: '1h' }
+    );
+}
+
 export function verificarToken(req: AuthenticatedRequest, res: Response, next: NextFunction) {
     const token = req.headers.authorization?.split(' ')[1];
     if (!token) {
