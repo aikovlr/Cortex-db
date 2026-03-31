@@ -55,7 +55,6 @@ export const tarefaTable = pgTable('tarefa', {
         .references(() => tipo_prioridadeTable.id_prioridade, { onDelete: 'restrict' }),
     id_equipe_fk: integer('id_equipe_fk')
         .references(() => equipeTable.id_equipe, { onDelete: 'restrict' }),
-    deletado_em: timestamp('deletado_em'),
     id_status_fk: integer('id_status_fk')
         .notNull()
         .references(() => status_tarefaTable.id_status, { onDelete: 'restrict' }),

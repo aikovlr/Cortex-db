@@ -512,26 +512,24 @@ app.get("/membro_equipe", verificarToken, async (req: AuthenticatedRequest, res)
         id_membro: membro_equipeTable.id_membro,
         nome: usuarioTable.nome,
         cargo: roleTable.nome,
+        id_role_fk: membro_equipeTable.id_role_fk,
         dt_entrada: membro_equipeTable.dt_entrada,
         tarefas_atribuidas: sql<number>`COUNT(${responsavel_tarefaTable.id_tarefa_fk}) FILTER (WHERE ${tarefaTable.id_equipe_fk} = ${id_equipe})`
       })
       .from(membro_equipeTable)
-
       .leftJoin(usuarioTable, eq(membro_equipeTable.id_usuario_fk, usuarioTable.id_usuario))
       .leftJoin(roleTable, eq(membro_equipeTable.id_role_fk, roleTable.id_role))
       .leftJoin(responsavel_tarefaTable, eq(responsavel_tarefaTable.id_usuario_fk, usuarioTable.id_usuario))
       .leftJoin(tarefaTable, eq(responsavel_tarefaTable.id_tarefa_fk, tarefaTable.id_tarefa))
-
       .where(and(eq(membro_equipeTable.id_equipe_fk, id_equipe), filtroNome))
-
       .groupBy(
         membro_equipeTable.id_membro,
         usuarioTable.nome,
         roleTable.nome,
         membro_equipeTable.dt_entrada,
+        membro_equipeTable.id_role_fk,
         roleTable.id_role
       )
-
       .orderBy(asc(roleTable.id_role), desc(membro_equipeTable.dt_entrada));
 
     res.status(200).json(membros);
@@ -540,7 +538,178 @@ app.get("/membro_equipe", verificarToken, async (req: AuthenticatedRequest, res)
     console.error(error);
     res.status(500).json({ message: "Erro ao buscar membros da equipe." });
   }
+});
 
+// buscar dados do membro da equipe autenticado para uma equipe específica 
+app.get("/membro_equipe/me", verificarToken, async (req: AuthenticatedRequest, res) => {
+  try {
+
+    if (!req.user || typeof req.user !== "object" || !("id" in req.user)) {
+      return res.status(401).json({ message: "Usuário não autenticado." });
+    }
+
+    const { id_equipe } = req.query;
+
+    if (!id_equipe || isNaN(Number(id_equipe))) {
+      return res.status(400).json({ message: "id_equipe inválido." });
+    }
+
+    const membro = await db
+      .select()
+      .from(membro_equipeTable)
+      .where(and(
+        eq(membro_equipeTable.id_usuario_fk, Number(req.user.id)),
+        eq(membro_equipeTable.id_equipe_fk, Number(id_equipe))
+      ))
+      .limit(1);
+
+    if (membro.length === 0) {
+      return res.status(404).json({ message: "Usuário não pertence à equipe." });
+    }
+
+    res.status(200).json({
+      id: membro[0]!.id_usuario_fk,
+      id_role_fk: membro[0]!.id_role_fk
+    });
+
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: "Erro ao buscar usuário na equipe." });
+  }
+});
+
+// promover membro da equipe a admin 
+app.put("/membro_equipe/:id_membro/promover", verificarToken, async (req: AuthenticatedRequest, res) => {
+  try {
+
+    if (!req.user || typeof req.user !== "object" || !("id" in req.user)) {
+      return res.status(401).json({ message: "Usuário não autenticado." });
+    }
+
+    const { id_membro } = req.params;
+    const id = Number(id_membro);
+
+    if (!id || isNaN(id)) {
+      return res.status(400).json({ message: "id_membro inválido." });
+    }
+
+    const membro = await db
+      .select()
+      .from(membro_equipeTable)
+      .where(eq(membro_equipeTable.id_membro, id))
+      .limit(1);
+
+    if (membro.length === 0) {
+      return res.status(404).json({ message: "Membro da equipe não encontrado." });
+    }
+
+    const equipe = await db
+      .select()
+      .from(equipeTable)
+      .where(eq(equipeTable.id_equipe, membro[0]!.id_equipe_fk))
+      .limit(1);
+
+    if (equipe.length === 0) {
+      return res.status(404).json({ message: "Equipe não encontrada." });
+    }
+
+    if (equipe[0]!.id_criador_fk !== Number(req.user.id)) {
+      return res.status(403).json({ message: "Apenas o criador da equipe pode promover membros." });
+    }
+
+    if (membro[0]!.id_usuario_fk === Number(req.user.id)) {
+      return res.status(400).json({ message: "O dono não pode alterar o próprio cargo." });
+    }
+
+    if (membro[0]!.id_role_fk === 2) {
+      return res.status(400).json({ message: "Membro já é admin." });
+    }
+
+    const result = await db
+      .update(membro_equipeTable)
+      .set({ id_role_fk: 2 })
+      .where(eq(membro_equipeTable.id_membro, id))
+      .returning();
+
+    if (result.length === 0) {
+      return res.status(404).json({ message: "Membro da equipe não encontrado." });
+    }
+
+    res.status(200).json({ message: "Membro promovido a admin com sucesso." });
+
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: "Erro ao promover membro da equipe." });
+  }
+});
+
+// remover membro da equipe (somente para admins e dono, sem remover o dono)
+app.delete("/membro_equipe/:id_membro", verificarToken, async (req: AuthenticatedRequest, res) => {
+  try {
+
+    if (!req.user || typeof req.user !== "object" || !("id" in req.user)) {
+      return res.status(401).json({ message: "Usuário não autenticado." });
+    }
+
+    const { id_membro } = req.params;
+
+    const membroAlvo = await db
+      .select()
+      .from(membro_equipeTable)
+      .where(eq(membro_equipeTable.id_membro, Number(id_membro)))
+      .limit(1);
+
+    if (membroAlvo.length === 0) {
+      return res.status(404).json({ message: "Membro da equipe não encontrado." });
+    }
+
+    const userEquipe = await db
+      .select()
+      .from(membro_equipeTable)
+      .where(and(
+        eq(membro_equipeTable.id_usuario_fk, Number(req.user.id)),
+        eq(membro_equipeTable.id_equipe_fk, membroAlvo[0]!.id_equipe_fk)
+      ))
+      .limit(1);
+
+    if (userEquipe.length === 0) {
+      return res.status(403).json({ message: "Usuário não é membro da equipe." });
+    }
+
+    const roleUser = userEquipe[0]!.id_role_fk;
+    const roleAlvo = membroAlvo[0]!.id_role_fk;
+
+    if (roleUser !== 1 && roleUser >= roleAlvo) {
+      return res.status(403).json({
+        message: "Você não pode remover um membro com cargo igual ou superior ao seu."
+      });
+    }
+
+    if (req.user.id === membroAlvo[0]!.id_usuario_fk) {
+      return res.status(403).json({ message: "Você não pode remover a si mesmo da equipe." });
+    }
+
+    if (roleAlvo === 1) {
+      return res.status(403).json({
+        message: "O dono da equipe não pode ser removido."
+      });
+    }
+
+    const result = await db
+      .delete(membro_equipeTable)
+      .where(eq(membro_equipeTable.id_membro, Number(id_membro)))
+      .returning();
+
+    if (result.length === 0) {
+      return res.status(404).json({ message: "Membro da equipe não encontrado." });
+    }
+
+    res.status(200).json({ message: "Membro da equipe removido com sucesso." });
+
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: "Erro ao remover membro da equipe." });
+  }
 });
 
 // Criar tarefa com atribuição individual ou para equipe
@@ -869,7 +1038,6 @@ app.delete("/tarefas/:id", verificarToken, async (req: AuthenticatedRequest, res
   }
 });
 
-
 // atualizar anexos da tarefa 
 app.put("/tarefas/:id/anexo", verificarToken, upload.array("anexo"), async (req: AuthenticatedRequest, res) => {
   try {
@@ -990,4 +1158,3 @@ app.get("/anexo/download/:nome", verificarToken, (req: AuthenticatedRequest, res
 });
 
 app.listen(3000, () => console.log("Servidor rodando na porta 3000"));
-
